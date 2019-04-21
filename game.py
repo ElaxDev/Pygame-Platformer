@@ -1,137 +1,150 @@
-import pygame, sys
+import pygame, sys, math
 from pygame.locals import *
-
-import var
+from variables import *
+from pytmx import load_pygame
 
 class RigidBody:
-    def __init__(self, coords, size, movement):
+    def __init__(self, coords, size):
         self.rect = pygame.Rect(coords[0], coords[1], size[0], size[1])
-        self.movement = movement
+        self.rect_color = dark_red
+        self.speed = [0,0]
+        self.whitelist = []
+        self.label = "RigidBody"
 
-    def add_gravity(self, gravity):
-        self.movement[1] = (gravity/var.pixel_per_meter)*var.vel
+    def apply_gravity(self):
+        self.speed[1] += round(gravity/pixel_per_metter)
 
-    def draw(self, color):
-        pygame.draw.rect(window, color, self.rect)
+    def move_and_collide(self, speed, object_list = None):
+        self.rect.x += round(speed[0])
+        self.rect.y += round(speed[1])
 
-    def move(self, object_list):
-        self.rect.centerx += round(self.movement[0])
-        collisions = [object for object in object_list if self.rect.colliderect(object)]
-        for object in collisions:
-            if object != self:
-                if self.movement[0] > 0 and object.label != "Box":
-                    self.rect.right = object.rect.left
-                if self.movement[0] < 0 and object.label != "Box":
-                    self.rect.left = object.rect.right
-                if object.label == "Box":
-                    if self.movement[0] > 0:
-                        object.rect.x = self.rect.x + self.rect.width
-                    if self.movement[0] < 0:
-                        object.rect.x = self.rect.x - object.rect.width
+        if (speed[0] != 0 or speed[1] != 0) and (object_list != None and type(object_list) == type(list())):
+            for object in object_list:
+                if self.rect.colliderect(object.rect):
+                    for label in self.whitelist:
+                        if object.label == label:
+                            if speed[0] > 0: self.rect.right = object.rect.left
+                            if speed[0] < 0: self.rect.left = object.rect.right
+                            if speed[1] > 0:
+                                self.rect.bottom = object.rect.top
+                                self.speed[1] = 0; self.can_jump = True
+                                if object.speed[0] != 0:
+                                    self.move_and_collide((object.speed[0],0))
+                            if speed[1] < 0: self.rect.top = object.rect.bottom
 
-        collisions = []
-
-        self.rect.centery += round(self.movement[1])
-        collisions = [object for object in object_list if self.rect.colliderect(object)]
-        for object in collisions:
-            if object != self:
-                if self.movement[1] > 0:
-                    self.rect.bottom = object.rect.top
-                if self.movement[1] < 0:
-                    self.rect.top = object.rect.bottom
-        return self.rect
+    def draw_rect(self, surface):
+        pygame.draw.rect(surface,self.rect_color, self.rect)
 
 
-class Player(RigidBody):
-    def __init__(self, coords, size, movement):
-        RigidBody.__init__(self, coords, size, movement)
+class RB_Block(RigidBody):
+    def __init__(self, coords, size):
+        RigidBody.__init__(self, coords, size)
+        self.label = "RB_Block"
+        self.rect_color = block_rect_color
+
+
+class Bl_Platform(RB_Block):
+    def __init__(self, coords, size, speed = 1, direction = 0, max_distance = 100):
+        RB_Block.__init__(self, coords, size)
+        self.label = "Bl_Platform"
+        self.direction = direction
+        self.travel_speed = [
+            abs(math.cos(math.radians(self.direction))*speed),
+            abs(math.sin(math.radians(self.direction))*speed)
+        ]
+        self.rect_color = platform_rect_color
+        self.initial_position = coords
+        self.final_position = [
+            coords[0]+int(math.cos(math.radians(self.direction))*max_distance),
+            coords[1]+int(math.sin(math.radians(self.direction))*max_distance)
+            ]
+
+    def update(self):
+        if self.rect.x <= self.initial_position[0]: self.speed[0] = self.travel_speed[0]
+        if self.rect.x >= self.final_position[0]: self.speed[0] = -self.travel_speed[0]
+        if self.rect.y <= self.initial_position[1]: self.speed[1] = self.travel_speed[1]
+        if self.rect.y >= self.final_position[1]: self.speed[1] = -self.travel_speed[1]
+        self.move_and_collide(self.speed)
+
+class RB_Entity(RigidBody):
+    def __init__(self, coords, size, game):
+        RigidBody.__init__(self, coords, size)
+        self.label = "RB_Entity"
+
+        self.whitelist = solid_objects
+
+        self.jump_speed = jump_speed
+        self.jump_timer = [0, 6]
+        self.is_jumping = False
+        self.can_jump = False
+
+    def jump(self, toggle):
+        self.is_jumping = False
+        if toggle and self.can_jump:
+            if self.jump_timer[0] <= self.jump_timer[1]:
+                self.speed[1] = -self.jump_speed
+                self.jump_timer[0] += 1
+            else:
+                self.can_jump = False
+        else:
+            if self.can_jump: self.is_jumping = True
+            self.jump_timer[0] = 0
+        if self.is_jumping: self.can_jump = False
+
+class Et_Player(RB_Entity):
+    def __init__(self, coords, game):
+        RB_Entity.__init__(self, coords, player_rect_size, game)
         self.label = "Player"
         self.keymap = {
-            "Right"  :pygame.K_RIGHT,
-            "Left"   :pygame.K_LEFT,
-            "Up"     :pygame.K_UP,
-            "Down"   :pygame.K_DOWN,
-            "ButtonB":pygame.K_SPACE
+        "Up"     : pygame.K_UP,
+        "Down"   : pygame.K_DOWN,
+        "Left"   : pygame.K_LEFT,
+        "Right"  : pygame.K_RIGHT,
+        "ButtonB": pygame.K_SPACE
         }
-        self.jump_speed = 7
-        self.timer = {
-            "Jump" : [0, 6]
-        }
-        self.metadata = {
-            "Jumped" : False,
-            "CanJump": False
-        }
+        self.walk_speed = player_walk_speed
 
-    def detect_input(self):
-        keyboard = pygame.key.get_pressed()
-        self.movement[0] = (keyboard[self.keymap["Right"]] - keyboard[self.keymap["Left"]])*var.vel
-        if bool(keyboard[self.keymap["ButtonB"]]) and self.metadata["CanJump"]:
-            if self.timer["Jump"][0] <= self.timer["Jump"][1]:
-                self.movement[1] = -self.jump_speed
-                self.timer["Jump"][0] += 1
-            else:
-                if self.metadata["CanJump"]: self.metadata["Jumped"] = True
-                self.timer["Jump"][0] = 0
+    def get_input(self):
+        self.keyboard = pygame.key.get_pressed()
+        self.speed[0] = (self.keyboard[self.keymap["Right"]] - self.keyboard[self.keymap["Left"]])*self.walk_speed
+        self.toggle = bool(self.keyboard[self.keymap["ButtonB"]])
 
-    def jump(self, metadata):
-        if metadata["CanJump"] == True:
-            self.movement[1] = -50
-            print(self.movement[1])
+    def update(self, game):
+        self.apply_gravity(); self.get_input()
+        self.jump(self.toggle)
+        self.move_and_collide((0,self.speed[1]),game.object_list)
+        self.move_and_collide((self.speed[0],0),game.object_list)
 
-class Block(RigidBody):
-    def __init__(self, coords, size, movement):
-        RigidBody.__init__(self, coords, size, movement)
-        self.label = "Box"
+class Game:
+    def __init__(self):
+        pygame.init()
+        self.screen = pygame.display.set_mode(screen_size)
+        self.clock = pygame.time.Clock()
+        self.object_list = []
 
-class Wall(RigidBody):
-    def __init__(self, coords, size, movement = []):
-        RigidBody.__init__(self, coords, size, movement)
-        self.label = "Wall"
+    def add_objects(self, *args):
+        for object in args:
+            self.object_list.append(object)
 
+    def start(self):
+        pj = Et_Player((100,100), self)
+        self.add_objects(RB_Block((50,200),(200,20)),Bl_Platform((250,200), (50,20)))
+        while True:
+            self.clock.tick(max_framerate)
+            self.screen.fill(background_color)
 
-def draw_game():
-    window.fill(var.gray)
-    player.draw(var.red)
-    for solid in solid_list:
-        pygame.draw.rect(window, var.black, solid)
-    pygame.display.flip()
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    pygame.quit(); sys.exit()
+            pj.update(self)
+            pj.draw_rect(self.screen)
 
-def game_loop():
+            for object in self.object_list:
+                object.draw_rect(self.screen)
+                try: object.update()
+                except AttributeError: pass
 
-    clock = pygame.time.Clock()
-    game_quit = False
+            pygame.display.update()
 
-    while not game_quit:
-        clock.tick(var.max_fps)
-        events_list = pygame.event.get()
-
-        for event in events_list:
-            if event.type == pygame.QUIT:
-                game_quit = True
-
-        for object in solid_list:
-            if object.label != "Wall":
-                object.add_gravity(var.gravity)
-                object.move(solid_list)
-
-        player.detect_input()
-        player.add_gravity(var.gravity)
-        player.move(solid_list)
-        draw_game()
-    pygame.quit()
-
-def game_initialize():
-
-    global window, player, solid_list
-
-    solid_list = [Wall([10,var.window_height-20], [600, 20], [0,0]), Block([200, 0], [50,50], [0,0])]
-
-    pygame.init()
-    window = pygame.display.set_mode((var.window_width, var.window_height))
-
-    player = Player(var.player_coords, [50,50], [0,0])
-
-
-if __name__ == '__main__':
-    game_initialize()
-    game_loop()
+game = Game()
+game.start()
