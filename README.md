@@ -2,8 +2,8 @@ This is a basic platformer template with basic classes created, such as rigid bo
 
 # Requirements
 <br/>
-Install pygame by running this command: `pip install pygame`
+Install pygame by running this command: <code>pip install pygame</code>
 
 # Running
 <br/>
-Run it by running this command: `python ./main.py`
+Run it by running this command: <code>python ./main.py</code>
