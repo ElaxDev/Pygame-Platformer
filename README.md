@@ -6,4 +6,4 @@ Install pygame by running this command: <code>pip install pygame</code>
 
 # Running
 <br/>
-Run it by running this command: <code>python ./main.py</code>
+Run it by running this command: <code>python ./game.py</code>
